@@ -34,6 +34,11 @@ ModuleInfo "History: 1.00 Initial Release"
 
 ModuleInfo "CC_OPTS: -std=c99"
 
+?Win32
+Import "-limagehlp"
+Import "-ldbghelp"
+?
+
 Import Collections.HashMap
 Import Collections.Queue
 Import BRL.Reflection
