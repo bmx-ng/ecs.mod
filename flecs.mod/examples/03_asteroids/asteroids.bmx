@@ -1,12 +1,18 @@
 SuperStrict
 
-Framework SDL.sdlrendermax2d
+Framework Max2D.SDL3RenderMax2D
 Import image.png
 Import Ecs.Flecs
 Import brl.random
-Import Audio.AudioSDL
+Import SDL3.SDL3AudioAudio
 Import collections.queue
 Import BRL.RamStream
+Import BRL.Event
+Import BRL.Hook
+Import BRL.OGGLoader
+Import SDL3.SDL3Gamepad
+Import Audio.VorbisStream
+Import Max2D.VirtualJoystick
 
 Incbin "audio/asteroids_main.ogg"
 Incbin "audio/asteroids_game_over.ogg"
@@ -29,7 +35,14 @@ AppTitle = "Asteroids ECS"
 ' shake things up a little
 SeedRnd(Millisecs())
 
+?android
+Graphics 800, 600, 32, 0, GRAPHICS_FULLSCREEN_DESKTOP
+?Not android
 Graphics 800, 600
+?
+SetVirtualResolution 800, 600, VIRTUAL_LETTERBOX
+SetVirtualBarColor 0, 0, 0
+If Not SetAudioDriver("SDL3") Then Throw "Unable to start SDL3 audio: " + SDL_GetError()
 
 Global sounds:TSound[6]
 sounds[0] = LoadSound("incbin::audio/asteroids_main.ogg", SOUND_STREAM)
@@ -75,9 +88,19 @@ Const ASTEROID_TINY:Int = 3
 Const RESPAWN_X:Float = 400
 Const RESPAWN_Y:Float = 300
 Const PLAYER_SAFE_RADIUS:Float = 80
+Const PLAYER_TURN_SPEED:Float = 300
+Const UI_TEXT_SCALE:Float = 1.0
 
 Const DIFFICULTY_NORMAL:Int = 0
 Const DIFFICULTY_HARD:Int = 1
+
+Const MENU_START:Int = 0
+Const MENU_DIFFICULTY:Int = 1
+Const MENU_ITEM_X:Float = 260
+Const MENU_ITEM_WIDTH:Float = 280
+Const MENU_ITEM_HEIGHT:Float = 46
+Const MENU_START_Y:Float = 270
+Const MENU_DIFFICULTY_Y:Float = 330
 
 Global difficulty:Int = DIFFICULTY_NORMAL
 
@@ -87,10 +110,39 @@ Global score:Int
 Global lives:Int
 Global level:Int
 Global player:ULong
-Global gameOverInputDelay:Int
+Global gameOverInputDelay:Float
+Global menuSelection:Int = MENU_START
+Global frameDelta:Float = 1.0 / 60.0
+
+Global inputTurn:Float
+Global inputThrust:Int
+Global inputFireHit:Int
+Global inputMenuUpHit:Int
+Global inputMenuDownHit:Int
+Global inputConfirmHit:Int
+
+Global gamepad:TSDLGamepad
+Global previousGamepadFire:Int
+Global previousGamepadConfirm:Int
+Global previousGamepadUp:Int
+Global previousGamepadDown:Int
+
+Global touchControls:TVirtualJoystick = TVirtualJoystick.Create(4)
+touchControls.SetStickEnabled False
+touchControls.SetButtonLabel 0, "<"
+touchControls.SetButtonLabel 1, ">"
+touchControls.SetButtonLabel 2, "THR"
+touchControls.SetButtonLabel 3, "FIRE"
+Global touchMode:Int
+?android
+touchMode = True
+?
+Global touchHitPending:Int
+Global touchHitX:Float
+Global touchHitY:Float
 
 Global respawning:Int = False
-Global respawnTimer:Int = 0
+Global respawnTimer:Float = 0
 
 Global ASTEROID_RADIUS:Float[] = [24.0, 16.0, 8.0, 4.0]
 Global ASTEROID_DEFAULT_SPEED:Float[] = [1, 1.4, 2, 3]
@@ -172,43 +224,59 @@ Global menuObjectQuery:TEcsQuery = world.CreateQuery([menuObjectTag.id])
 
 ' Enable the REST server for the ECS world.
 ' This allows external tools to connect to the game and inspect or modify the ECS state in real-time, which is useful for debugging and development.
+?Not android
 world.EnableRestServer()
+?
 
+AddHook EmitEventHook, TouchEventHook
 ShowMenu()
+Local previousFrame:Int = MilliSecs()
 
-While Not KeyDown(Key_Escape)
+While Not KeyDown(Key_Escape) And Not AppTerminate()
+	Local now:Int = MilliSecs()
+	frameDelta = Min(0.1, Max(0.001, Float(now - previousFrame) / 1000.0))
+	previousFrame = now
+
+	LayoutTouchControls()
+	UpdateInput()
 
 	Cls
+	SetColor 255, 255, 255
+	SetAlpha 1.0
 
-	world.Update(1.0 / 60.0)
+	world.Update(frameDelta)
 	FlushFinishedMusicQueue()
 
 	Select gameState
 		Case STATE_MENU
 			DrawImage(images[7], 380, 190)
 
-			DrawText "Press SPACE to Start", 300, 270
-
-			If difficulty = DIFFICULTY_NORMAL Then
-				DrawText "Difficulty: Normal", 315, 310
-			Else
-				DrawText "Difficulty: Hard", 325, 310
-			End If
-
-			DrawText "Press D to Toggle Difficulty", 280, 340
+			DrawMenuItem("Start game", MENU_START_Y, menuSelection = MENU_START)
+			Local difficultyName:String = "Normal"
+			If difficulty = DIFFICULTY_HARD Then difficultyName = "Hard"
+			DrawMenuItem("Difficulty: " + difficultyName, MENU_DIFFICULTY_Y, menuSelection = MENU_DIFFICULTY)
 
 			If highScore > 0 Then
-				DrawText "Today's High Score: " + highScore, 300, 400
+				DrawUITextCentered "Today's High Score: " + highScore, 400, 420
 			End If
 
-			DrawText "(c) 2026 Bruce A Henderson", 280, 580
+			DrawUITextCentered "Arrow keys / controller / touch", 400, 480
+			DrawUITextCentered "(c) 2026 Bruce A Henderson", 400, 580
 
-			If KeyHit(Key_D) Then
-				difficulty = 1 - difficulty
+			If inputMenuUpHit Or inputMenuDownHit Then
+				menuSelection = 1 - menuSelection
 			End If
-			If KeyHit(Key_Space) Then
-				StartGame()
+			If inputConfirmHit Then ActivateMenuItem(menuSelection)
+			If touchHitPending Then
+				If PointInRect(touchHitX, touchHitY, MENU_ITEM_X, MENU_START_Y, MENU_ITEM_WIDTH, MENU_ITEM_HEIGHT) Then
+					menuSelection = MENU_START
+					ActivateMenuItem(MENU_START)
+				Else If PointInRect(touchHitX, touchHitY, MENU_ITEM_X, MENU_DIFFICULTY_Y, MENU_ITEM_WIDTH, MENU_ITEM_HEIGHT) Then
+					menuSelection = MENU_DIFFICULTY
+					ActivateMenuItem(MENU_DIFFICULTY)
+				End If
 			End If
+			touchHitPending = False
 
 		Case STATE_PLAYING
 			CheckBulletAsteroidCollisions()
@@ -217,41 +285,236 @@ While Not KeyDown(Key_Escape)
 			UpdateRespawn()
 			CheckLevelComplete()
 
-			DrawText "Score: " + score, 10, 10
-			DrawText "Lives: " + lives, 10, 30
-			DrawText "Level: " + level, 10, 50
+			DrawUIText "Score: " + score, 10, 10
+			DrawUIText "Lives: " + lives, 10, 34
+			DrawUIText "Level: " + level, 10, 58
 
 			If respawning Then
 				DrawRespawnIndicator()
 			End If
 
+			touchHitPending = False
+			If touchMode Then touchControls.Render()
+
 		Case STATE_GAMEOVER
-			DrawText "GAME OVER", 350, 250
-			DrawText "Score: " + score, 350, 280
+			DrawUITextCentered "GAME OVER", 400, 250
+			DrawUITextCentered "Score: " + score, 400, 290
 
 			If score >= highScore Then
 				highScore = score
-				DrawText "New High Score!", 330, 310
+				DrawUITextCentered "New High Score!", 400, 330
 			Else
-				DrawText "High Score: " + highScore, 330, 310
+				DrawUITextCentered "High Score: " + highScore, 400, 330
 			End If
 
 			If gameOverInputDelay > 0 Then
-				gameOverInputDelay :- 1
+				gameOverInputDelay :- frameDelta
 				FlushKeys(True)
+				touchHitPending = False
 			Else
-				DrawText "Press SPACE to Return to Menu", 270, 360
+				DrawUITextCentered "Activate or tap to return to menu", 400, 380
 	 
-				If KeyHit(Key_Space) Then
+				If inputConfirmHit Or touchHitPending Then
 					FadeOutEntity(gameOverMusicEntity, 0.5)
 					gameState = STATE_RETURNING_TO_MENU
 				End If
+				touchHitPending = False
 			End If
+
+		Case STATE_RETURNING_TO_MENU
+			touchHitPending = False
 
 	End Select
 	Flip
 
 Wend
+
+touchControls.Free()
+If gamepad Then gamepad.Close()
+RemoveHook EmitEventHook, TouchEventHook
+EndGraphics
+
+Function TouchEventHook:Object(id:Int, data:Object, context:Object)
+	Local event:TEvent = TEvent(data)
+	If Not event Or event.id <> EVENT_TOUCHDOWN Then Return data
+	touchMode = True
+	Local nativeX:Float = NativeResolutionWidth() * event.x / 10000.0
+	Local nativeY:Float = NativeResolutionHeight() * event.y / 10000.0
+	NativeToVirtual(nativeX, nativeY, touchHitX, touchHitY)
+	touchHitPending = True
+	Return data
+End Function
+
+Function UpdateGamepad()
+	If gamepad And Not gamepad.Connected() Then
+		gamepad.Close()
+		gamepad = Null
+	End If
+	If gamepad Then Return
+	Local ids:UInt[] = SDLGamepadIDs()
+	If ids.Length Then gamepad = TSDLGamepad.Open(ids[0])
+	previousGamepadFire = False
+	previousGamepadConfirm = False
+	previousGamepadUp = False
+	previousGamepadDown = False
+End Function
+
+Function NormalizedGamepadAxis:Float(value:Int)
+	If value < 0 Then Return Float(value) / 32768.0
+	Return Float(value) / 32767.0
+End Function
+
+Function UpdateInput()
+	inputTurn = 0
+	inputThrust = False
+	inputFireHit = False
+	inputMenuUpHit = KeyHit(Key_Up)
+	inputMenuDownHit = KeyHit(Key_Down)
+	Local keyboardConfirm:Int = KeyHit(Key_Space) Or KeyHit(Key_Return)
+	inputConfirmHit = keyboardConfirm
+	inputFireHit = keyboardConfirm
+
+	If KeyDown(Key_Left) Then inputTurn :- 1
+	If KeyDown(Key_Right) Then inputTurn :+ 1
+	If KeyDown(Key_Up) Then inputThrust = True
+	If inputTurn Or inputThrust Or inputMenuUpHit Or inputMenuDownHit Or keyboardConfirm Then touchMode = False
+
+	UpdateGamepad()
+	If gamepad Then
+		Local gamepadX:Float = NormalizedGamepadAxis(gamepad.Axis(SDL_GAMEPAD_AXIS_LEFTX))
+		Local gamepadY:Float = NormalizedGamepadAxis(gamepad.Axis(SDL_GAMEPAD_AXIS_LEFTY))
+		Local leftDown:Int = gamepad.Button(SDL_GAMEPAD_BUTTON_DPAD_LEFT)
+		Local rightDown:Int = gamepad.Button(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)
+		Local upDown:Int = gamepad.Button(SDL_GAMEPAD_BUTTON_DPAD_UP) Or gamepadY < -0.55
+		Local downDown:Int = gamepad.Button(SDL_GAMEPAD_BUTTON_DPAD_DOWN) Or gamepadY > 0.55
+		Local thrustDown:Int = gamepad.Button(SDL_GAMEPAD_BUTTON_SOUTH)
+		Local fireDown:Int = gamepad.Button(SDL_GAMEPAD_BUTTON_EAST)
+		Local confirmDown:Int = thrustDown Or fireDown Or gamepad.Button(SDL_GAMEPAD_BUTTON_START)
+
+		If Abs(gamepadX) > 0.2 Then inputTurn = gamepadX * Abs(gamepadX)
+		If leftDown Then inputTurn = -1
+		If rightDown Then inputTurn = 1
+		inputThrust :| thrustDown
+		inputFireHit :| fireDown And Not previousGamepadFire
+		inputConfirmHit :| confirmDown And Not previousGamepadConfirm
+		inputMenuUpHit :| upDown And Not previousGamepadUp
+		inputMenuDownHit :| downDown And Not previousGamepadDown
+
+		If Abs(gamepadX) > 0.2 Or Abs(gamepadY) > 0.2 Or leftDown Or rightDown Or thrustDown Or fireDown Or confirmDown Then
+			touchMode = False
+		End If
+		previousGamepadFire = fireDown
+		previousGamepadConfirm = confirmDown
+		previousGamepadUp = upDown
+		previousGamepadDown = downDown
+	End If
+
+	Local touchLeft:Int = touchControls.ButtonDown(0)
+	Local touchRight:Int = touchControls.ButtonDown(1)
+	Local touchTurn:Float = touchRight - touchLeft
+	Local touchThrust:Int = touchControls.ButtonDown(2)
+	Local touchFire:Int = touchControls.ButtonHit(3)
+	If touchTurn Then inputTurn = touchTurn
+	inputThrust :| touchThrust
+	inputFireHit :| touchFire
+	If touchTurn Or touchThrust Or touchFire Then touchMode = True
+End Function
+
+Function LayoutTouchControls()
+	Local x:Int, y:Int, width:Int, height:Int
+	GetWindowSafeArea x, y, width, height
+	If width <= 0 Or height <= 0 Then Return
+	Local scale:Float = Max(0.68, Min(1.8, Float(Min(width, height)) / 720.0)) * touchControls.uiScale
+	Local edge:Float = touchControls.margin * scale
+	Local radius:Float = touchControls.buttonRadius * scale
+	Local spacing:Float = radius * 2 + touchControls.buttonGap * scale
+	Local bottomY:Float = y + height - edge - radius
+
+	' Digital steering buttons sit side by side at the lower-left edge.
+	Local leftX:Float = x + edge + radius
+	touchControls.SetButton 0, leftX, bottomY, radius
+	touchControls.SetButton 1, leftX + spacing, bottomY, radius
+
+	' Thrust remains low while fire sits above and against the right edge.
+	Local rightX:Float = x + width - edge - radius
+	touchControls.SetButton 2, rightX - spacing, bottomY, radius
+	touchControls.SetButton 3, rightX, bottomY - spacing, radius
+End Function
+
+Function SetTouchControlsActive(active:Int)
+	touchControls.visible = active
+	If active Then
+		touchControls.Enable()
+	Else
+		touchControls.Disable()
+	End If
+	touchControls.Flush()
+End Function
+
+Function DrawMenuItem(label:String, y:Float, selected:Int)
+	If selected Then
+		SetColor 55, 170, 240
+		SetAlpha 0.82
+	Else
+		SetColor 34, 47, 66
+		SetAlpha 0.68
+	End If
+	DrawRect MENU_ITEM_X, y, MENU_ITEM_WIDTH, MENU_ITEM_HEIGHT
+	SetAlpha 1.0
+	DrawUITextCentered label, MENU_ITEM_X + MENU_ITEM_WIDTH * 0.5, y + MENU_ITEM_HEIGHT * 0.5
+	SetColor 255, 255, 255
+End Function
+
+Function DrawUIText(label:String, virtualX:Float, virtualY:Float)
+	Local nativeX:Float, nativeY:Float
+	VirtualToNative virtualX, virtualY, nativeX, nativeY
+	Const scale:Float = UI_TEXT_SCALE
+	PushMax2DState()
+	SetRenderImage Null
+	SetNativeResolution()
+	SetCamera Null
+	SetOrigin 0, 0
+	SetViewport 0, 0, NativeResolutionWidth(), NativeResolutionHeight()
+	SetTransform 0, scale, scale
+	SetColor 0, 0, 0
+	DrawText label, Floor(nativeX) + 1, Floor(nativeY) + 1
+	SetColor 255, 255, 255
+	DrawText label, Floor(nativeX), Floor(nativeY)
+	PopMax2DState()
+End Function
+
+Function DrawUITextCentered(label:String, virtualX:Float, virtualY:Float)
+	Local nativeX:Float, nativeY:Float
+	VirtualToNative virtualX, virtualY, nativeX, nativeY
+	Const scale:Float = UI_TEXT_SCALE
+	Local x:Float = nativeX - TextWidth(label) * scale * 0.5
+	Local y:Float = nativeY - TextHeight(label) * scale * 0.5
+	PushMax2DState()
+	SetRenderImage Null
+	SetNativeResolution()
+	SetCamera Null
+	SetOrigin 0, 0
+	SetViewport 0, 0, NativeResolutionWidth(), NativeResolutionHeight()
+	SetTransform 0, scale, scale
+	SetColor 0, 0, 0
+	DrawText label, Floor(x) + 1, Floor(y) + 1
+	SetColor 255, 255, 255
+	DrawText label, Floor(x), Floor(y)
+	PopMax2DState()
+End Function
+
+Function PointInRect:Int(px:Float, py:Float, x:Float, y:Float, width:Float, height:Float)
+	Return px >= x And py >= y And px < x + width And py < y + height
+End Function
+
+Function ActivateMenuItem(index:Int)
+	Select index
+		Case MENU_START
+			StartGame()
+		Case MENU_DIFFICULTY
+			difficulty = 1 - difficulty
+	End Select
+End Function
 
 
 
@@ -393,6 +656,7 @@ Function StartGame()
 	lives = 3
 	level = 1
 	gameState = STATE_PLAYING
+	SetTouchControlsActive(True)
 
 	SpawnPlayer()
 	StartLevel()
@@ -528,7 +792,8 @@ End Function
 Function ShowGameOver()
 
 	FlushKeys(True)
-	gameOverInputDelay = 120
+	SetTouchControlsActive(False)
+	gameOverInputDelay = 2.0
 	gameState = STATE_GAMEOVER
 	gameOverMusicEntity = StartMusic(1, False)
 
@@ -537,6 +802,7 @@ End Function
 Function PlayerInput(it:TEcsIter)
 
 	Local thrusting:Int = False
+	Local frameScale:Float = it.DeltaTime() * 60.0
 
 	Local p:SPosition Ptr
 	it.Component(position, 0, Varptr p)
@@ -548,26 +814,21 @@ Function PlayerInput(it:TEcsIter)
 	it.Component(rotation, 2, Varptr r)
 
 	For Local i:Int = 0 Until it.Count()
-		If KeyDown(Key_Left) Then 
-			r[i].angle :- 5
-		End If
+		r[i].angle :+ inputTurn * PLAYER_TURN_SPEED * it.DeltaTime()
 
-		If KeyDown(Key_Right) Then
-			r[i].angle :+ 5
-		End If
-
-		If KeyDown(Key_Up) Then
+		If inputThrust Then
 			thrusting = True
-			v[i].x :+ Cos(r[i].angle) * 0.25
-			v[i].y :+ Sin(r[i].angle) * 0.25
+			v[i].x :+ Cos(r[i].angle) * 0.25 * frameScale
+			v[i].y :+ Sin(r[i].angle) * 0.25 * frameScale
 
 			SpawnThrustParticles(p[i].x, p[i].y, r[i].angle, v[i].x, v[i].y)
 		End If
 
-		v[i].x :* 0.99
-		v[i].y :* 0.99
+		Local damping:Float = Float(Exp(Log(0.99) * frameScale))
+		v[i].x :* damping
+		v[i].y :* damping
 
-		If KeyHit(Key_Space) Then
+		If inputFireHit Then
 			If difficulty = DIFFICULTY_HARD Then
 				If BulletCount() < 5 Then
 					SpawnBullet(p[i].x, p[i].y, r[i].angle, v[i].x, v[i].y)
@@ -602,10 +863,11 @@ Function Move(it:TEcsIter)
 
 	Local v:SVelocity Ptr
 	it.Component(velocity, 1, Varptr v)
+	Local frameScale:Float = it.DeltaTime() * 60.0
 
 	For Local i:Int = 0 Until it.Count()
-		p[i].x :+ v[i].x
-		p[i].y :+ v[i].y
+		p[i].x :+ v[i].x * frameScale
+		p[i].y :+ v[i].y * frameScale
 	Next
 
 End Function
@@ -641,7 +903,7 @@ Function LifetimeSystem(it:TEcsIter)
 	it.Component(lifetime, 0, Varptr l)
 
 	For Local i:Int = 0 Until it.Count()
-		l[i].remaining :- 1.0 / 60.0
+		l[i].remaining :- it.DeltaTime()
 		If l[i].remaining <= 0 Then
 			world.QueueDelete(it.Entity(i))
 		End If
@@ -779,7 +1041,7 @@ Function CheckPlayerAsteroidCollisions()
 					ShowGameOver()
 				Else
 					respawning = True
-					respawnTimer = 60
+					respawnTimer = 1.0
 				End If
 
 				Return
@@ -821,9 +1083,10 @@ Function Rotate(it:TEcsIter)
 
 	Local av:SAngularVelocity Ptr
 	it.Component(angularVelocity, 1, Varptr av)
+	Local frameScale:Float = it.DeltaTime() * 60.0
 
 	For Local i:Int = 0 Until it.Count()
-		r[i].angle :+ av[i].speed
+		r[i].angle :+ av[i].speed * frameScale
 	Next
 
 End Function
@@ -968,6 +1231,8 @@ Function ShowMenu()
 	ClearMenu()
 
 	gameState = STATE_MENU
+	menuSelection = MENU_START
+	SetTouchControlsActive(False)
 	SpawnMenuAsteroids()
 	menuMusicEntity = StartMusic(0, True)
 	gameOverMusicEntity = 0
@@ -990,7 +1255,7 @@ Function MusicUpdate(it:TEcsIter)
 
 		Local f:SFadeOut Ptr
 		If world.GetComponent(e, fadeOut, Varptr f) Then
-			f.remaining :- 1.0 / 60.0
+			f.remaining :- it.DeltaTime()
 			If f.duration > 0 Then
 				v[i].value = Max(0.0, f.remaining / f.duration)
 			Else
@@ -1093,14 +1358,14 @@ Function UpdateRespawn()
 		Return
 	End If
 	If respawnTimer > 0 Then
-		respawnTimer :- 1
+		respawnTimer :- frameDelta
 		Return
 	End If
 	If RespawnAreaClear() Then
 		SpawnPlayer()
 		respawning = False
 	Else
-		respawnTimer = 15
+		respawnTimer = 0.25
 	End If
 
 End Function
