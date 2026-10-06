@@ -883,7 +883,7 @@ void bmx_ecs_run_pipeline(ecs_world_t *world, BBULONG pipeline, float deltaTime)
 }
 
 void bmx_ecs_enable_stats(ecs_world_t *world) {
-    FlecsStatsImport(world);
+    ECS_IMPORT(world, FlecsStats);
 }
 
 int bmx_ecs_get_stats(ecs_world_t *world, bmx_ecs_world_stats_t *stats) {
@@ -978,15 +978,4 @@ void bmx_ecs_query_destroy(ecs_world_t *world, bmx_ecs_query_t *query) {
 void bmx_ecs_query_reset_group(bmx_ecs_query_t *query, uint64_t group_id) {
     query->iter = ecs_query_iter(query->query->world, query->query);
     ecs_iter_set_group(&query->iter, group_id);
-}
-
-////////////////////////////////////////////////////////////
-
-void bmx_ecs_enable_rest_server(ecs_world_t *world, int port) {
-    FlecsStatsImport(world);
-    FlecsRestImport(world);
-
-    ecs_singleton_set(world, EcsRest, {
-        .port = (uint16_t)port
-    });
 }

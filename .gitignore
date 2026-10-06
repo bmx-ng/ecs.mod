@@ -19,6 +19,10 @@
 *.arm64.a
 *.arm64.i
 .bmx/
+.generics/
+*.app/
+*.bmxbuild
+*.bmxbuild.*
 *.i2
 *.exe
 commands.html

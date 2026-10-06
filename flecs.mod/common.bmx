@@ -88,11 +88,6 @@ Extern
 	Function bmx_ecs_query_advance:Int(queryPtr:Byte Ptr)
 	Function bmx_ecs_query_reset_group(queryPtr:Byte Ptr, groupId:ULong)
 
-	Function FlecsStatsImport(worldPtr:Byte Ptr)
-	Function FlecsRestImport(worldPtr:Byte Ptr)
-
-	Function bmx_ecs_enable_rest_server(worldPtr:Byte Ptr, port:Int)
-
 	Function bmx_ecs_set_target_fps(worldPtr:Byte Ptr, fps:Float)
 
 	Function bmx_ecs_register_observer:ULong(worldPtr:Byte Ptr, name:String, event:ULong, componentIds:ULong Ptr, componentCount:Int, observer:Object)

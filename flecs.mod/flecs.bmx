@@ -32,7 +32,11 @@ ModuleInfo "Copyright: BlitzMax wrapper - 2026 Bruce A Henderson"
 
 ModuleInfo "History: 1.00 Initial Release"
 
-ModuleInfo "CC_OPTS: -std=c99"
+ModuleInfo "CC_OPTS: -std=c99 -DFLECS_NO_HTTP -DFLECS_NO_REST"
+
+?win32
+Import "-ldbghelp"
+?
 
 Import Collections.HashMap
 Import Collections.Queue
@@ -1164,16 +1168,6 @@ Type TEcsWorld
 	End Method
 
 	Rem
-	bbdoc: Enables the REST server for the ECS world.
-	about: The REST server allows you to interact with the ECS world using HTTP requests.
-	You can use this to inspect the state of the world, query entities, and perform other operations.
-	The default port is 27750, but you can specify a different port if needed.
-	End Rem
-	Method EnableRestServer(port:Int = 27750)
-		bmx_ecs_enable_rest_server(worldPtr, port)
-	End Method
-
-	Rem
 	bbdoc: Enables the collection of statistics for the ECS world.
 	about: Enabling statistics allows you to monitor the performance and resource usage of the ECS world.
 	You can retrieve statistics such as the number of entities, components, systems, and more.
@@ -1431,4 +1425,3 @@ Type TEcsObserver
     End Function
 
 End Type
-
