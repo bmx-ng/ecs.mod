@@ -3,6 +3,9 @@ SuperStrict
 Framework Max2D.SDL3RenderMax2D
 Import image.png
 Import Ecs.Flecs
+?Not android
+Import Ecs.FlecsRest
+?
 Import brl.random
 Import SDL3.SDL3AudioAudio
 Import collections.queue
@@ -225,7 +228,7 @@ Global menuObjectQuery:TEcsQuery = world.CreateQuery([menuObjectTag.id])
 ' Enable the REST server for the ECS world.
 ' This allows external tools to connect to the game and inspect or modify the ECS state in real-time, which is useful for debugging and development.
 ?Not android
-world.EnableRestServer()
+EnableRestServer(world)
 ?
 
 AddHook EmitEventHook, TouchEventHook
@@ -465,10 +468,24 @@ Function DrawMenuItem(label:String, y:Float, selected:Int)
 	SetColor 255, 255, 255
 End Function
 
+Function UITextScale:Float()
+?android
+	Return UI_TEXT_SCALE
+?Not android
+	Local width:Int = GraphicsWidth()
+	Local height:Int = GraphicsHeight()
+	If width <= 0 Or height <= 0 Then Return UI_TEXT_SCALE
+	Local scaleX:Float = Float(NativeResolutionWidth()) / width
+	Local scaleY:Float = Float(NativeResolutionHeight()) / height
+	Return Max(UI_TEXT_SCALE, Min(scaleX, scaleY))
+?
+End Function
+
 Function DrawUIText(label:String, virtualX:Float, virtualY:Float)
 	Local nativeX:Float, nativeY:Float
 	VirtualToNative virtualX, virtualY, nativeX, nativeY
-	Const scale:Float = UI_TEXT_SCALE
+	Local scale:Float = UITextScale()
+	Local shadow:Float = Max(1.0, Floor(scale + 0.5))
 	PushMax2DState()
 	SetRenderImage Null
 	SetNativeResolution()
@@ -477,7 +494,7 @@ Function DrawUIText(label:String, virtualX:Float, virtualY:Float)
 	SetViewport 0, 0, NativeResolutionWidth(), NativeResolutionHeight()
 	SetTransform 0, scale, scale
 	SetColor 0, 0, 0
-	DrawText label, Floor(nativeX) + 1, Floor(nativeY) + 1
+	DrawText label, Floor(nativeX) + shadow, Floor(nativeY) + shadow
 	SetColor 255, 255, 255
 	DrawText label, Floor(nativeX), Floor(nativeY)
 	PopMax2DState()
@@ -486,7 +503,8 @@ End Function
 Function DrawUITextCentered(label:String, virtualX:Float, virtualY:Float)
 	Local nativeX:Float, nativeY:Float
 	VirtualToNative virtualX, virtualY, nativeX, nativeY
-	Const scale:Float = UI_TEXT_SCALE
+	Local scale:Float = UITextScale()
+	Local shadow:Float = Max(1.0, Floor(scale + 0.5))
 	Local x:Float = nativeX - TextWidth(label) * scale * 0.5
 	Local y:Float = nativeY - TextHeight(label) * scale * 0.5
 	PushMax2DState()
@@ -497,7 +515,7 @@ Function DrawUITextCentered(label:String, virtualX:Float, virtualY:Float)
 	SetViewport 0, 0, NativeResolutionWidth(), NativeResolutionHeight()
 	SetTransform 0, scale, scale
 	SetColor 0, 0, 0
-	DrawText label, Floor(x) + 1, Floor(y) + 1
+	DrawText label, Floor(x) + shadow, Floor(y) + shadow
 	SetColor 255, 255, 255
 	DrawText label, Floor(x), Floor(y)
 	PopMax2DState()
