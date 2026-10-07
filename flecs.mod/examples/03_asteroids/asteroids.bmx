@@ -38,9 +38,9 @@ AppTitle = "Asteroids ECS"
 ' shake things up a little
 SeedRnd(Millisecs())
 
-?android
+?android Or ios
 Graphics 800, 600, 32, 0, GRAPHICS_FULLSCREEN_DESKTOP
-?Not android
+?Not android And Not ios
 Graphics 800, 600
 ?
 SetVirtualResolution 800, 600, VIRTUAL_LETTERBOX
@@ -137,7 +137,7 @@ touchControls.SetButtonLabel 1, ">"
 touchControls.SetButtonLabel 2, "THR"
 touchControls.SetButtonLabel 3, "FIRE"
 Global touchMode:Int
-?android
+?android Or ios
 touchMode = True
 ?
 Global touchHitPending:Int
