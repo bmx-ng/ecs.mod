@@ -1,0 +1,10 @@
+app.package=org.blitzmax.ecsasteroids
+app.version.code=1
+app.version.name=1.0.0
+app.name=ECS Asteroids
+app.orientation=landscape
+app.comments=BlitzMax ECS Asteroids example
+app.company=BlitzMax
+app.description=Asteroids ECS example
+app.copyright=Copyright 2026
+app.trademarks=
