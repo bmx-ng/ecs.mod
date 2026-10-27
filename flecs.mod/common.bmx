@@ -28,7 +28,7 @@ Import "source.bmx"
 Extern
 
 	Function ecs_mini:Byte Ptr()
-	Function ecs_fini(world:Byte Ptr)
+	Function ecs_fini:Int(world:Byte Ptr)
 	Function ecs_init:Byte Ptr()
 	Function ecs_new:ULong(worldPtr:Byte Ptr)
 

@@ -1,0 +1,6 @@
+@define asteroidswebshell
+	if bmk.Platform() == "emscripten" then
+		globals.SetOption("ld_opts", "asteroids_shell", "--shell-file \"" .. globals.Get("BUILDPATH") .. "/web_shell.html\"")
+	end
+@end
+asteroidswebshell

@@ -3,7 +3,7 @@ SuperStrict
 Framework Max2D.SDL3RenderMax2D
 Import image.png
 Import Ecs.Flecs
-?Not android
+?Not android And Not emscripten
 Import Ecs.FlecsRest
 ?
 Import brl.random
@@ -14,6 +14,7 @@ Import BRL.Event
 Import BRL.Hook
 Import BRL.OGGLoader
 Import SDL3.SDL3Gamepad
+Import SDL3.SDL3Video
 Import Audio.VorbisStream
 Import Max2D.VirtualJoystick
 
@@ -34,13 +35,21 @@ Incbin "images/particle.png"
 Incbin "images/asteroids_logo.png"
 
 AppTitle = "Asteroids ECS"
+?emscripten
+' SDL3 expects the browser loop to be registered before graphics initialization pumps events.
+RunAppLoop(AsteroidsFrame, AsteroidsStopped)
+?
 
 ' shake things up a little
 SeedRnd(Millisecs())
 
 ?android Or ios
 Graphics 800, 600, 32, 0, GRAPHICS_FULLSCREEN_DESKTOP
-?Not android And Not ios
+?emscripten
+If Not Graphics(800, 600, 0, 60, SDL_WINDOW_FILL_DOCUMENT) Then
+	Throw "Unable to start SDL3 graphics: " + SDL_GetError()
+End If
+?Not android And Not ios And Not emscripten
 Graphics 800, 600
 ?
 SetVirtualResolution 800, 600, VIRTUAL_LETTERBOX
@@ -54,6 +63,11 @@ sounds[2] = LoadSound("incbin::audio/shoot.ogg")
 sounds[3] = LoadSound("incbin::audio/death.ogg")
 sounds[4] = LoadSound("incbin::audio/hit_quiet.ogg")
 sounds[5] = LoadSound("incbin::audio/thrust.ogg", SOUND_LOOP)
+?emscripten
+For Local soundIndex:Int = 0 Until sounds.Length
+	If Not sounds[soundIndex] Then Throw "Asteroids: sound " + soundIndex + " failed to load"
+Next
+?
 
 Global channels:THashMap<Int, TChannel> = New THashMap<Int, TChannel>
 Global nextChannelId:Int = 1
@@ -227,15 +241,29 @@ Global menuObjectQuery:TEcsQuery = world.CreateQuery([menuObjectTag.id])
 
 ' Enable the REST server for the ECS world.
 ' This allows external tools to connect to the game and inspect or modify the ECS state in real-time, which is useful for debugging and development.
-?Not android
+?Not android And Not emscripten
 EnableRestServer(world)
 ?
 
 AddHook EmitEventHook, TouchEventHook
 ShowMenu()
-Local previousFrame:Int = MilliSecs()
+Global previousFrame:Int = MilliSecs()
 
-While Not KeyDown(Key_Escape) And Not AppTerminate()
+?Not emscripten
+RunAppLoop(AsteroidsFrame, AsteroidsStopped)
+?
+
+Function AsteroidsStopped()
+	touchControls.Free()
+	If gamepad Then gamepad.Close()
+	RemoveHook EmitEventHook, TouchEventHook
+	EndGraphics
+End Function
+
+Function AsteroidsFrame:Int()
+	?not emscripten
+	If KeyDown(Key_Escape) Or AppTerminate() Then Return False
+	?
 	Local now:Int = MilliSecs()
 	frameDelta = Min(0.1, Max(0.001, Float(now - previousFrame) / 1000.0))
 	previousFrame = now
@@ -329,13 +357,8 @@ While Not KeyDown(Key_Escape) And Not AppTerminate()
 
 	End Select
 	Flip
-
-Wend
-
-touchControls.Free()
-If gamepad Then gamepad.Close()
-RemoveHook EmitEventHook, TouchEventHook
-EndGraphics
+	Return True
+End Function
 
 Function TouchEventHook:Object(id:Int, data:Object, context:Object)
 	Local event:TEvent = TEvent(data)
