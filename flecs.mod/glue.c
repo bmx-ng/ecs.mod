@@ -249,7 +249,7 @@ bmx_ecs_query_t *bmx_ecs_query_create(ecs_world_t *world, BBULONG *componentIds,
     return query;
 }
 
-bmx_ecs_query_t *bmx_ecs_ordered_query_create(ecs_world_t *world, BBULONG *componentIds, int32_t componentCount, BBULONG orderById, ecs_order_by_action_t *callback, BBObject *queryObj, uint32_t flags, int cacheKind) {
+bmx_ecs_query_t *bmx_ecs_ordered_query_create(ecs_world_t *world, BBULONG *componentIds, int32_t componentCount, BBULONG orderById, ecs_order_by_action_t callback, BBObject *queryObj, uint32_t flags, int cacheKind) {
     if (componentCount > FLECS_TERM_COUNT_MAX) {
         return NULL;
     }
@@ -326,7 +326,7 @@ bmx_ecs_query_t *bmx_ecs_grouped_query_create_terms(ecs_world_t *world, bmx_ecs_
     return query;
 }
 
-bmx_ecs_query_t *bmx_ecs_ordered_query_create_terms(ecs_world_t *world, bmx_ecs_term_t *terms, int32_t termCount, BBULONG orderById, ecs_order_by_action_t *callback, BBObject *queryObj, uint32_t flags, int cacheKind) {
+bmx_ecs_query_t *bmx_ecs_ordered_query_create_terms(ecs_world_t *world, bmx_ecs_term_t *terms, int32_t termCount, BBULONG orderById, ecs_order_by_action_t callback, BBObject *queryObj, uint32_t flags, int cacheKind) {
     if (termCount > FLECS_TERM_COUNT_MAX) {
         return NULL;
     }
@@ -354,7 +354,7 @@ bmx_ecs_query_t *bmx_ecs_ordered_query_create_terms(ecs_world_t *world, bmx_ecs_
     return query;
 }
 
-bmx_ecs_query_t *bmx_ecs_grouped_ordered_query_create_terms(ecs_world_t *world, bmx_ecs_term_t *terms, int32_t termCount, BBULONG groupById, BBULONG orderById, ecs_order_by_action_t *callback, BBObject *queryObj, uint32_t flags, int cacheKind) {
+bmx_ecs_query_t *bmx_ecs_grouped_ordered_query_create_terms(ecs_world_t *world, bmx_ecs_term_t *terms, int32_t termCount, BBULONG groupById, BBULONG orderById, ecs_order_by_action_t callback, BBObject *queryObj, uint32_t flags, int cacheKind) {
     if (termCount > FLECS_TERM_COUNT_MAX) {
         return NULL;
     }
@@ -930,11 +930,11 @@ BBULONG bmx_ecs_iter_field_id(ecs_iter_t *it, int32_t index) {
 }
 
 BBULONG bmx_ecs_iter_pair_first(ecs_iter_t *it, int32_t index) {
-    return (BBULONG)ecs_pair_first(it, (int8_t)index);
+    return (BBULONG)ecs_pair_first(it->world, ecs_field_id(it, (int8_t)index));
 }
 
 BBULONG bmx_ecs_iter_pair_second(ecs_iter_t *it, int32_t index) {
-    return (BBULONG)ecs_pair_second(it, (int8_t)index);
+    return (BBULONG)ecs_pair_second(it->world, ecs_field_id(it, (int8_t)index));
 }
 
 int bmx_ecs_iter_is_true(ecs_iter_t *it) {
